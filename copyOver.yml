@@ -1,0 +1,15 @@
+---
+- name: Copy WP installation - Server to Server
+  hosts: remote
+  become: true
+  gather_facts: true
+  vars:
+    wp_srcPath: /home/dc/public_html/
+    wp_destServer: host2:/home/dc/public_html/
+
+  tasks:
+    - name: Copy WP installation files
+      copy:
+        src: '{{ wp_srcPath }}'
+        dest: '{{ wp_destServer }}'
+        state: present

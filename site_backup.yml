@@ -1,0 +1,15 @@
+---
+- name: Backup WordPress
+  hosts: host1
+  become: false
+  gather_facts: true
+  vars:
+    domain_name: perfectfarts
+    php_default_version: 7.4
+    cron_set_days: 5
+    cron_set: absent
+    store_path: /home/maximum/bkup
+
+
+  roles:
+    - backup

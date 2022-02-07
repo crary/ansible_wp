@@ -1,0 +1,115 @@
+---
+# tasks file for WP
+- name: add new user {{ domain_name }}
+  user:
+    name: "{{ domain_name }}"
+    state: present
+    uid: "{{ set_UID }}"
+
+- name: create {{ domain_name }} site path
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - /home/{{ domain_name }}/logs
+    - /home/{{ domain_name }}/public_html
+
+- name: create nginx {{ domain_name }}.conf
+  template:
+    src: wp_1nginx.conf.j2
+    dest: /etc/nginx/conf.d/{{ domain_name }}.conf
+  tags: nginx.config
+
+- name: remove default nginx vhost
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: create php-fpm vhost pool {{ domain_name }}.conf
+  template:
+    src: wp.php-fpm.conf
+    dest: /etc/php/{{ php_default_version }}/fpm/pool.d/{{ domain_name }}.conf
+
+- name: create php-fpm logfile
+  file:
+    path: /home/{{ domain_name }}/logs/phpfpm_error.log
+    state: touch
+
+- name: create {{ domain_name }} MySQL DB
+  mysql_db:
+    name: "{{ domain_name }}"
+    state: present
+  notify: restart mysql
+
+- name: create {{ domain_name }} MySQL user
+  mysql_user:
+    name: "{{ domain_name }}"
+    password: "{{ user_dbPASS }}"
+    login_user: "root"
+    login_password: "{{ mysql_root_password }}"
+    priv: "*.*:ALL,GRANT"
+    state: present
+    append_privs: yes
+    config_file: "/root/.my.cnf"
+  notify: restart mysql
+  tags: wp.install
+
+- name: download WordPress
+  get_url:
+    url: https://wordpress.org/latest.tar.gz
+    dest: /home/{{ domain_name }}/wordpress.tar.gz
+    validate_certs: no
+    force: yes
+
+- name: extract WordPress
+  unarchive:
+    src: /home/{{ domain_name }}/wordpress.tar.gz
+    dest: /home/{{ domain_name }}/public_html/
+    copy: no
+
+- name: remove original wordpress.tar.gz
+  file:
+    path: /home/{{ domain_name }}/wordpress.tar.gz
+    state: absent
+
+- name: Copy over WordPress extraction to public_html
+  copy:
+    src: /home/{{ domain_name }}/public_html/wordpress/
+    dest: /home/{{ domain_name }}/public_html/
+    remote_src: yes
+
+- name: remove redundant WP install
+  file:
+    path: /home/{{ domain_name }}/public_html/wordpress
+    state: absent
+
+- name: Copy in {{ domain_name }} wp-config.php
+  template:
+    src: wp-config.php.j2
+    dest: /home/{{ domain_name }}/public_html/wp-config.php
+  tags: wp.config
+
+- name: change WordPress group ownership
+  file:
+    path: /home/{{ domain_name }}/public_html/
+    owner: "{{ domain_name }}"
+    group: www-data
+    state: directory
+    recurse: yes
+#    mode: u=rwX,g=r,o=r
+  notify:
+  - restart php-fpm
+  - restart nginx
+
+- name: change WordPress directory permissions
+  shell:
+  args:
+    chdir: /home/{{ domain_name }}/public_html
+    cmd: find . -type d -exec chmod 755 {} \;
+
+- name: change WordPress file permissions
+  shell:
+  args:
+    chdir: /home/{{ domain_name }}/public_html
+    cmd: find . -type f -exec chmod 644 {} \;
+#  Notify: restart nginx

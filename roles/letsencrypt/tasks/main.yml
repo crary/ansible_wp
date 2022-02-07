@@ -1,0 +1,92 @@
+---
+# tasks file for letsencrypt
+- name: Create required directories in /etc/letsencrypt
+  file:
+    path: "/etc/letsencrypt/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: u=rwx,g=x,o=x
+  with_items:
+    - account
+    - certs
+    - csrs
+    - keys
+
+# open port 443 iptables -A INPUT -p tcp -^Cport 443 -j ACCEPT
+
+- name: Generate a let's encrypt account key
+  shell: "if [ ! -f {{ letsencrypt_account_key }} ]; then openssl genrsa 4096 | sudo tee {{ letsencrypt_account_key }}; fi"
+  tags: key.gen
+
+- name: Generate let's encrypt private key
+  shell: "openssl genrsa 4096 | sudo tee /etc/letsencrypt/keys/{{ domain_name }}.key"
+  tags: key.gen
+
+- name: Generate let's encrypt csr
+  shell: "openssl req -new -sha256 -key /etc/letsencrypt/keys/{{ domain_name }}.key -subj \"/CN={{ domain_name }}{{ tld }}\" -reqexts SAN -config <(cat /etc/ssl/openssl.cnf <(printf \"\n[SAN]\nsubjectAltName=DNS:{{ domain_name }}{{ tld }},DNS:www.{{ domain_name }}{{ tld }}\")) | sudo tee /etc/letsencrypt/csrs/{{ domain_name }}.csr"
+  args:
+    executable: /bin/bash
+  tags: gen.csr
+
+- name: Begin let's encrypt challenges
+  acme_certificate:
+    acme_directory: "{{ acme_directory }}"
+    acme_version: "{{ acme_version }}"
+    account_key_src: "{{ letsencrypt_account_key }}"
+    account_email: "{{ acme_email }}"
+    terms_agreed: 1
+    challenge: "{{ acme_challenge_type }}"
+    csr: "{{ letsencrypt_csrs_dir}}/{{ domain_name }}.csr"
+    dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+    fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ domain_name }}.crt"
+    remaining_days: 91
+  register: acme_challenge_domain
+  tags: encrypt.chall
+
+- debug:
+    msg: "{{ acme_challenge_domain }}"
+  tags: encrypt.chall
+
+- name: Create .well-known/acme-challenge directory
+  file:
+    path: "/home/{{domain_name}}/public_html/.well-known/acme-challenge"
+    state: directory
+    owner: root
+    group: root
+    mode: u=rwx,g=rx,o=rx
+
+- name: Impliment http-01 challenge files
+  copy:
+    content: "{{ acme_challenge_domain['challenge_data'][item]['http-01']['resource_value'] }}"
+    dest: "/home/{{ domain_name }}/public_html/{{ acme_challenge_domain['challenge_data'][item]['http-01']['resource'] }}"
+    owner: root
+    group: root
+    mode: u=rw,g=r,o=r
+  with_items:
+    - "{{ domain_name }}{{ tld }}"
+    - "www.{{ domain_name }}{{ tld }}"
+  tags: http1.chal
+
+- name: Complete lets Encrypt challenges
+  acme_certificate:
+    acme_directory: "{{ acme_directory }}"
+    acme_version: "{{ acme_version }}"
+    account_key_src: "{{ letsencrypt_account_key }}"
+    account_email: "{{ acme_email }}"
+    challenge: "{{ acme_challenge_type }}"
+    csr: "{{ letsencrypt_csrs_dir }}/{{ domain_name }}.csr"
+    dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+    chain_dest: "{{ letsencrypt_certs_dir }}/chain_{{ domain_name }}.crt"
+    fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ domain_name }}"
+    data: "{{ acme_challenge_domain }}"
+  tags: http1.chal
+
+- name: Add updated nginx {{ domain_name }}.conf
+  template:
+    src: wp.nginx.conf
+    dest: /etc/nginx/conf.d/{{ domain_name }}.conf
+  notify:
+  - restart php-fpm
+  - restart nginx
+  tags: nginx.config2

@@ -1,0 +1,87 @@
+---
+# tasks file for php
+- name: create php-fpm directory
+  file:
+    path: /var/run/php-fpm
+    state: directory
+  tags: php.install
+
+#- name: update apt packages
+#  apt:
+#    update_cache: yes
+#  tags: php.install
+
+- name: install php & extensions
+  apt:
+    pkg:
+      - php-fpm
+      - php-common
+      - php-cli
+      - php-json
+      - php-opcache
+      - php-xmlrpc
+      - php-curl
+      - php-gd
+      - php-xml
+      - php-mbstring
+      - php-mysql
+    state: present
+  notify: update apt packages
+  tags: php.install
+
+- name: check for original php-fpm conf
+  stat:
+    path: /etc/php/{{ php_default_version }}/fpm/orgin.php-fpm.conf
+  register: origin_phpFPM
+  tags: php.install
+
+- name: backup original php-fpm.conf
+  command: mv -n /etc/php/{{ php_default_version }}/fpm/php-fpm.conf /etc/php/{{ php_default_version }}/fpm/orgin.php-fpm.conf
+  when: origin_phpFPM.stat.exists == false
+  tags: php.install
+
+- name: copy in custom php-fpm.conf
+  template:
+    src: php-fpm.conf.j2
+    dest: /etc/php/{{ php_default_version }}/fpm/php-fpm.conf
+    remote_src: no
+  tags: php.install
+
+- name: check for original www.conf
+  stat:
+    path: /etc/php/{{ php_default_version }}/fpm/pool.d/origin.www.conf
+  register: origin_www
+  tags: php.install
+
+- name: backup original www.conf
+  command: mv -n /etc/php/{{ php_default_version }}/fpm/pool.d/www.conf /etc/php/{{ php_default_version }}/fpm/pool.d/origin.www.conf
+  when: origin_www.stat.exists == false
+  tags: php.install
+
+- name: Copy in new www.conf
+  copy:
+    src: "roles/php/files/www.conf"
+    dest: "/etc/php/{{ php_default_version }}/fpm/pool.d/www.conf"
+    remote_src: no
+  tags: php.install
+
+- name: check for original php.ini
+  stat:
+    path: /etc/php/{{ php_default_version }}/fpm/origin.php.ini
+  register: origin_php
+  tags: php.install
+
+- name: backup orginal php.ini
+  command: mv -n /etc/php/{{ php_default_version }}/fpm/php.ini /etc/php/{{ php_default_version }}/fpm/origin.php.ini
+  when: origin_php.stat.exists == false
+  tags: php.install
+
+- name: copy in custom php.ini
+  copy:
+    src: "roles/php/files/php.ini"
+    dest: "/etc/php/{{ php_default_version }}/fpm/php.ini"
+    remote_src: no
+  notify: restart php
+  tags: php.install
+
+

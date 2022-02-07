@@ -1,0 +1,40 @@
+---
+# tasks file for ssh
+- name: Make sure there is a wheel group
+  group:
+    name: wheel
+    state: present
+
+- name: Allow 'wheel' group to have passwordless sudo
+  lineinfile:
+    dest: /etc/sudoers
+    state: present
+    regexp: '^%wheel'
+    line: '%wheel All=(ALl) NOPASSWD: ALL'
+    validate: visudo -cf %s
+
+- name: Add non-root sudo user
+  user:
+    name: "{{ sudo_user }}
+    group: wheel
+    append: yes
+    shell: /bin/bash
+    uid: 1100
+    home: yes
+
+- name: copy ssh pub.key
+
+- name: rename and save original sshd_config file
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0640'
+    validate: '/usr/sbin/sshd -tf %s'
+  notify:
+    - ssh
+
+- name: copy over new sshd_config file
+  file:
+

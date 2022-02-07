@@ -1,0 +1,63 @@
+---
+# Fully removes WordPress install along with corresponding MySQL user, database and configuration files.
+- name: Remove WP {{ domain_name }} install
+  hosts: ph
+  become: true
+  gather_facts: true
+  vars:
+    domain_name: 167.99.171.120
+    php_default_version: 7.4
+    set_UID: 1026
+    tld: com
+#    User database password and root MySQL placed in external_vars
+  vars_files:
+    - ./external_vars.yml
+
+  tasks:
+    - name: remove {{ domain_name }} user from MySQL DB
+      mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        name: "{{ domain_name }}"
+        host_all: yes
+        state: absent
+
+    - name: remove {{ domain_name }} DB from MySQL
+      mysql_db:
+        name: "{{ domain_name}}"
+        state: absent
+
+    - name: remove {{ domain_name }} configuration files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/nginx/conf.d/{{ domain_name }}.conf
+        - /etc/php/{{ php_default_version }}/fpm/pool.d/{{ domain_name }}.conf
+        - /etc/letsencrypt/keys/{{ domain_name }}.key
+      tags: config.remove
+
+    - name: Stop php{{ php_default_version }}-fpm
+# Php-fpm must be stopped before ceasing any lingering group dependencies
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      with_items:
+        - 'php{{ php_default_version }}-fpm'
+
+    - name: Remove user {{ domain_name }}
+      user:
+        name: "{{ domain_name }}"
+        state: absent
+        group: "{{ domain_name }}"
+        remove: yes
+
+    - name: Restart services
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      with_items:
+        - 'nginx'
+        - 'mysql'
+        - 'php{{ php_default_version }}-fpm'
+

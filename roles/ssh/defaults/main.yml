@@ -1,0 +1,4 @@
+---
+# defaults file for ssh
+# Non-root user with sudo privilege
+sudo_user: dev

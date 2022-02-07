@@ -1,0 +1,9 @@
+---
+# handlers file for php
+- name: update apt packages
+  apt:
+    update_cache: yes
+
+- name: restart php
+  service: name=php{{ php_default_version }}-fpm state=restarted
+  tags: php.restart

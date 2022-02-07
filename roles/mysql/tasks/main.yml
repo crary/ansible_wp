@@ -1,0 +1,48 @@
+---
+# tasks file for mysql
+- name: Install MySql database packages
+  apt:
+    name:
+      - mysql-server
+      - mysql-client
+      - python3-mysqldb
+    state: present
+    update_cache: true
+  notify: restart mysql
+  tags: mysql.install
+
+- name: start mysql service
+  action: service name=mysql state=started
+
+- name: Update mysql root password for all root accounts
+  mysql_user: name=root password="{{ mysql_root_password }}" priv="*.*:ALL,GRANT"
+  tags: mysql.install
+
+- name: copy .my.cnf file with root password/credentials
+  template:
+    src: my.cnf.j2
+    dest: /root/.my.cnf
+    owner: root
+    mode: 0600
+  notify: restart mysql
+  tags: mysql.install
+
+- name: remove test mysql db
+  mysql_db: name=test state=absent
+  tags: mysql.install
+
+- name: remove anonyous users from MySql DB
+  mysql_user:
+    user: ""
+    host: "{{ item }}"
+    state: absent
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+  with_items:
+    - 127.0.0.1
+    - ::1
+    - localhost
+    - "*"
+#    - "{{ hostname }}"
+  notify: restart mysql
+  tags: install.mysql, remove.db

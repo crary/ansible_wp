@@ -1,0 +1,14 @@
+---
+  - name: LEMP & WP Install/Config
+    hosts: ph
+    become: true
+    vars:
+#      hostname: host1
+    vars_files:
+      - ./external_vars.yml
+
+    roles:
+      - nginx
+      - php
+      - mysql
+

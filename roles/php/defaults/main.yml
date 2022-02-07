@@ -1,0 +1,5 @@
+---
+# defaults file for php
+
+# default PHP version for Debian-bases OS
+php_default_version: 7.4

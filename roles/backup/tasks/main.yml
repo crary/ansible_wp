@@ -1,0 +1,143 @@
+---
+# tasks file for backup
+- name: Create backups folder
+  file:
+    path: "/home/{{ domain_name }}/backup/{{ item }}"
+    state: directory
+  with_items:
+    - 'fullWP'
+    - 'coreWP'
+    - 'config'
+    - 'mysql'
+    - 'certs'
+    - 'archive'
+
+- name: Backup {{ domain_name }} MySQL database
+  mysql_db:
+    name: '{{ domain_name }}'
+    state: dump
+    target: /home/{{ domain_name }}/backup/mysql/{{ domain_name }}_{{ ansible_date_time.date }}.sql.gz
+  register: mysqlDB
+  tags: bkup.sql
+
+- name: Set MySQL to update automatically with Cron
+  cron:
+    name: ' MySQL DB bkup '
+    day: '{{ cron_set_days }}'
+    state: '{{ cron_set }}'
+    job: mysqldump --add-drop-table --databases {{ domain_name }} > /home/{{ domain_name }}/backup/mysql/{{ domain_name }}_{{ ansible_date_time.date }}.sql.gz
+  tags: bkup.sql
+
+- name: Register nginx.conf path
+  stat:
+    path: /home/{{ domain_name }}/backup/config/nginx.{{ domain_name }}.conf
+  register: nginxConf
+  tags: bkup.conf
+
+- name: Copy {{ domain_name }} nginx configuration file to backup
+  copy:
+    src: /etc/nginx/conf.d/{{ domain_name }}.conf
+    dest: /home/{{ domain_name }}/backup/config/nginx.{{ domain_name }}.conf
+    remote_src: yes
+    force: yes
+  when: nginxConf != true
+  tags: bkup.conf
+
+- name: Register php.conf path
+  stat:
+    path: /home/{{ domain_name }}/backup/config/php.{{ domain_name }}.conf
+  register: phpConf
+  tags: bkup.conf
+
+- name: Copy {{ domain_name }} php-fpm file to backups
+  copy:
+    src: /etc/php/{{ php_default_version }}/fpm/pool.d/{{ domain_name }}.conf
+    dest: /home/{{ domain_name }}/backup/config/php.{{ domain_name }}.conf
+    remote_src: yes
+  when: phpConf != true
+  tags: bkup.conf
+
+- name: Register Let's Encrypt certificate & key path
+  stat:
+    path: '{{ item }}'
+  with_items:
+    - '/etc/letsencrypt/certs/fullchain_{{ domain_name }}'
+    - '/etc/letsencrypt/keys/{{ domain_name }}.key'
+  register: certReg
+  tags: bkup.cert
+
+- name: Copy Let's Encrypt Certification & Key
+  copy:
+    src: '{{ item.item }}'
+    dest: /home/{{ domain_name }}/backup/certs/
+    remote_src: yes
+  loop: '{{ certReg.results }}'
+  when: item.stat.exists == True
+  tags: bkup.cert
+
+- name: Gzip essential Wordpress files to backups
+  archive:
+    path:
+      - /home/{{ domain_name }}/public_html/wp-config.php
+      - /home/{{ domain_name }}/public_html/wp-admin
+      - /home/{{ domain_name }}/public_html/wp-content
+      - /home/{{ domain_name }}/public_html/wp-includes
+    format: zip
+    dest: /home/{{ domain_name }}/backup/coreWP/{{ domain_name }}_{{ ansible_date_time.date }}_coreWP.gz
+  tags: bkup.zip
+
+- name: Gzip entire Wordpress Install
+  archive:
+    path:
+      - /home/{{ domain_name }}/public_html
+    format: zip
+    dest: /home/{{ domain_name }}/backup/fullWP/{{ domain_name }}_{{ ansible_date_time.date }}_coreWP.gz
+  tags: bkup.zip
+
+- name: Archive all {{ domain_name }}
+  archive:
+    path:
+      - /home/{{ domain_name }}/backup/certs
+      - /home/{{ domain_name }}/backup/config
+      - /home/{{ domain_name }}/backup/coreWP
+      - /home/{{ domain_name }}/backup/fullWP
+      - /home/{{ domain_name }}/backup/mysql
+    format: tar
+    dest: /home/{{ domain_name }}/backup/archive/{{ domain_name }}_archive_{{ ansible_date_time.date }}.tar.gz
+  tags: bkup.tar
+
+- name: Find and register {{ domain_name }} archive
+  find:
+    paths: /home/{{ domain_name }}/backup/archive/
+    file_type: file
+    patterns: '*.tar.gz'
+  register: tar_file
+  tags: bkup.offsite
+
+- debug:
+    var: tar_file
+  tags: bkup.offsite1
+
+- name: Fetch {{ domain_name }} archive for offsite backup
+  fetch:
+    src: '{{ item.path }}'
+    dest: '{{ store_path }}'
+    fail_on_missing: yes
+  with_items: '{{ tar_file.files }}'
+  tags: bkup.offsite
+
+- name: Delete the oldest backups
+  shell:
+    cmd: ls -t | tail -n +11 | xargs rm
+    chdir: '{{ item }}'
+  with_items:
+    - '/home/backups/{{ domain_name }}/fullWP'
+    - '/home/backups/{{ domain_name }}/coreWP'
+    - '/home/backups/{{ domain_name }}/mysql'
+    - '/home/backups/{{ domain_name }}/archive'
+    - '/home/backups/{{ domain_name }}/config'
+  tags: clear.old
+
+# if [ ls | wc -l > 10 ]; then [ ls -t | tail -n +11 | xargs rm ] fi
+# if there is more than 10 items in <path> then delete the 3x oldest
+# Backup archive offsite

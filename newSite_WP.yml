@@ -1,0 +1,86 @@
+---
+# Basic E-Commerce Template
+- name: Create new WordPress site
+  hosts: ph
+  become: true
+  gather_facts: true
+  vars:
+    domain_name: peacehouse
+    php_default_version: 7.4
+    debug_set: false
+    set_UID: 1026
+    tld: .net
+    wp_admin: admin_ph
+    wp_pass: cH3cKKadm11n33!#s
+    wp_email: editor@peacehouse.net
+    wp_loginURL: secure-wp
+    user_dbPASS: Hk2ho2u145dhSHKh
+  vars_files:
+    - ./external_vars.yml
+  roles:
+    - WP
+#    - letsencrypt
+
+
+  tasks:
+    - name: check for wp-cli
+      stat: path="/usr/local/bin/wp"
+      register: wpcli_exists
+
+    - name: Download wp-cli
+      get_url:
+        url="https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
+        dest="/usr/local/bin/wp"
+        force_basic_auth=yes
+        mode=0755
+      when: wpcli_exists.stat.exists == false
+
+    - name: Run WP-Cli Set-up Script
+      shell:
+        cmd: wp core install --url={{ domain_name }}{{ tld }} --title=Example --admin_user={{ wp_admin }} --admin_password={{ wp_pass }} --admin_email={{ wp_email }}
+        chdir: /home/{{ domain_name }}/public_html/
+      become_user: "{{ domain_name }}"
+
+    - name: Remove unnecessary plugins
+      shell:
+        cmd: wp plugin deactivate --all; wp plugin delete $( wp plugin list --status=inactive --field=name)
+        chdir: /home/{{ domain_name }}/public_html/
+      become_user: "{{ domain_name }}"
+      tags: wp.plugin.remove
+
+    - name: Install needed plugins
+      shell:
+        cmd: wp plugin install woocommerce wordpress-seo --activate
+        chdir: /home/{{ domain_name }}/public_html/
+      become_user: "{{ domain_name }}"
+      tags: wp.plugin.install
+
+    - name: Install Astra theme
+      shell:
+        cmd: wp theme install astra --activate;
+        chdir: /home/{{ domain_name }}/public_html/
+      become_user: "{{ domain_name }}"
+      tags: wp.theme
+
+    - name: Copy and backup original wp-login.php
+      shell:
+        cmd: cp wp-login.php orig.wp-login.php
+        chdir: /home/{{ domain_name }}/public_html/
+
+    - name: Rename wp-login.php file to {{ wp_loginURL }}
+      shell:
+        cmd: mv wp-login.php {{ wp_loginURL }}.php
+        chdir: /home/{{ domain_name }}/public_html/
+
+# Changing the login URL adds a layer of security against bots
+    - name: Replace wp-login.php file with new URL
+      replace:
+        path: /home/{{ domain_name }}/public_html/{{ wp_loginURL }}.php
+        regexp: 'wp-login'
+        replace: '{{ wp_loginURL }}'
+
+    - name: Replace wp-login.php in general-template.php for logouts
+      replace:
+        path: /home/{{ domain_name }}/public_html/wp-includes/general-template.php
+        regexp: 'wp-login'
+        replace: '{{ wp_loginURL }}'

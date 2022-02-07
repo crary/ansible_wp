@@ -1,0 +1,8 @@
+---
+
+mysql_root_password: xxxxxxxxxxxxx
+user_dbPASS: xxxxxxxxxxxxxxxxx
+
+#nginx:
+#  owner: www-data
+#  group: www-data
